@@ -5,7 +5,21 @@ set -Eeuo pipefail
 readonly SCRIPT_PATH=$(readlink -f -- "${BASH_SOURCE[0]}")
 readonly SCRIPT_DIR=${SCRIPT_PATH%/*}
 readonly REPOSITORY_NAME='infrastructure-recovery'
-readonly REPOSITORY_URL='https://github.com/rootdet/infrastructure-recovery.git'
+readonly DEFAULT_REF='main'
+readonly INFRASTRUCTURE_RECOVERY_REF=${INFRASTRUCTURE_RECOVERY_REF:-$DEFAULT_REF}
+
+validate_ref() {
+  local ref=$1
+  if [[ $ref == "$DEFAULT_REF" ]]; then
+    return 0
+  fi
+  [[ $ref =~ ^[0-9a-fA-F]{40}$ ]] || {
+    printf 'Invalid INFRASTRUCTURE_RECOVERY_REF=%q. Expected a 40-character hexadecimal Git commit SHA, or leave it unset to use the default %s.\n' "$ref" "$DEFAULT_REF" >&2
+    exit 1
+  }
+}
+
+validate_ref "$INFRASTRUCTURE_RECOVERY_REF"
 
 # Metadata is deliberately parsed, never sourced. Results are METADATA_NAME and
 # METADATA_ORDER, and only the supported fields are accepted.
@@ -45,7 +59,8 @@ has_module_tree() {
 }
 
 bootstrap_standalone() {
-  local cache_root archive extract_dir checkout
+  local cache_root archive extract_dir checkout ref
+  ref=$INFRASTRUCTURE_RECOVERY_REF
   cache_root=${XDG_CACHE_HOME:-${TMPDIR:-/tmp}}
   checkout="$cache_root/$REPOSITORY_NAME"
   if has_module_tree "$checkout"; then
@@ -63,17 +78,23 @@ bootstrap_standalone() {
   archive=$(mktemp "${TMPDIR:-/tmp}/infrastructure-recovery.XXXXXX.tar.gz")
   extract_dir=$(mktemp -d "${TMPDIR:-/tmp}/infrastructure-recovery.XXXXXX")
   trap 'rm -f -- "$archive"; rm -rf -- "$extract_dir"' EXIT
-  printf 'This is a standalone launcher. Downloading the public recovery module tree...\n'
+  printf 'This is a standalone launcher. Downloading the public recovery module tree at ref %s...\n' "$ref"
   curl --fail --silent --show-error --location --retry 2 \
-    'https://github.com/rootdet/infrastructure-recovery/archive/refs/heads/main.tar.gz' \
+    "https://github.com/rootdet/infrastructure-recovery/archive/$ref.tar.gz" \
     --output "$archive" || {
-      printf 'Could not download the public recovery repository. Check network access or use a complete checkout.\n' >&2
+      printf 'Could not download the public recovery repository at ref %s. Check network access or use a complete checkout.\n' "$ref" >&2
       exit 1
     }
   tar -xzf "$archive" -C "$extract_dir"
-  checkout=$(find "$extract_dir" -mindepth 1 -maxdepth 1 -type d -name "$REPOSITORY_NAME-main" -print -quit)
+  checkout=''
+  while IFS= read -r -d '' directory; do
+    if has_module_tree "$directory"; then
+      checkout=$directory
+      break
+    fi
+  done < <(find "$extract_dir" -mindepth 1 -maxdepth 3 -type d -print0)
   [[ -n $checkout && -d $checkout ]] || {
-    printf 'Downloaded archive did not contain the expected %s tree.\n' "$REPOSITORY_NAME" >&2
+    printf 'Downloaded archive did not contain the expected %s tree for ref %s.\n' "$REPOSITORY_NAME" "$ref" >&2
     exit 1
   }
   has_module_tree "$checkout" || {
