@@ -16,7 +16,33 @@ chmod 700 recovery.sh
 sudo ./recovery.sh
 ```
 
-If the launcher is not inside a complete checkout, it downloads the public repository archive into a temporary working directory, validates the expected module tree, and relaunches that repository copy exactly once. The standalone bootstrap uses unauthenticated HTTPS and requires `curl` and `tar`; if either is unavailable it gives an actionable error. A complete checkout can instead be run directly with `./recovery.sh`.
+Normal recovery does not set `INFRASTRUCTURE_RECOVERY_REF`. When it is unset, a standalone launcher downloads the `main` branch automatically. If the launcher is not inside a complete checkout, it downloads the public repository archive into a temporary working directory, validates the expected module tree, and relaunches that repository copy exactly once.
+
+### Development and acceptance-testing override
+
+`INFRASTRUCTURE_RECOVERY_REF` is an optional development/acceptance-testing override. It is intended for testing a candidate commit before that commit is merged into `main`; it is not required for production recovery.
+
+The accepted values are:
+
+- `main`; or
+- an exact 40-character hexadecimal Git commit SHA.
+
+Malformed explicit values are rejected with an error. The launcher does not silently fall back to `main` when an override was supplied. For example:
+
+```bash
+INFRASTRUCTURE_RECOVERY_REF=0123456789abcdef0123456789abcdef01234567 ./recovery.sh
+```
+
+The intended pre-merge acceptance-test workflow is:
+
+```text
+download recovery.sh from the candidate commit
+→ set INFRASTRUCTURE_RECOVERY_REF to that same commit SHA
+→ run recovery.sh
+→ standalone launcher downloads that exact revision
+```
+
+The normal end-user command above remains unchanged and continues to use `main` automatically.
 
 ## Dynamic architecture
 
