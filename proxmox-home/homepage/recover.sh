@@ -6,15 +6,10 @@ readonly CONFIG_REPO='rootdet/homepage-dashboard'
 readonly INTEGRATIONS_REPO='rootdet/homepage-integrations'
 readonly HOMEPAGE_ROOT='/opt/homepage'
 readonly CONFIG_DIR="$HOMEPAGE_ROOT/config"
-readonly PRIVATE_RECOVERY_DIR='/opt/secrets'
+readonly SECRETS_DIR='/opt/secrets'
 readonly SSH_DIR='/root/.ssh'
 readonly BOOTSTRAP="$CONFIG_DIR/deployment/bootstrap.sh"
 readonly KNOWN_HOSTS="$SSH_DIR/known_hosts"
-
-# Public GitHub SSH host key data. This is published, stable operational data
-# (see https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/githubs-ssh-key-fingerprints)
-# and is not a secret. It is used to deterministically trust github.com
-# without prompting or scanning an unverified key.
 readonly GITHUB_KNOWN_HOSTS_ENTRY='github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl'
 
 fail() { printf 'ERROR: %s\n' "$1" >&2; exit 1; }
@@ -37,22 +32,14 @@ step 'Step 2: prepare access credentials' 'Preparing secure access credentials.'
 [[ ! -e $SSH_DIR || -d $SSH_DIR ]] || fail "$SSH_DIR is not a directory. Nothing was changed."
 mkdir -p "$SSH_DIR"; chown root:root "$SSH_DIR"; chmod 700 "$SSH_DIR"
 
-# Ensure GitHub's SSH host key is deterministically trusted before the first
-# git operation, so recovery cannot block on an interactive host-authenticity
-# prompt. This never disables verification and never trusts a scanned key; it
-# only adds the specific published GitHub key if it is not already present,
-# and it fails safely if existing known_hosts state is ambiguous.
 ensure_github_known_host() {
   [[ ! -e $KNOWN_HOSTS || -f $KNOWN_HOSTS ]] || fail "$KNOWN_HOSTS is not a regular file; refusing to modify it."
   [[ ! -L $KNOWN_HOSTS ]] || fail "$KNOWN_HOSTS is a symlink; refusing to modify it."
   touch "$KNOWN_HOSTS"; chown root:root "$KNOWN_HOSTS"; chmod 600 "$KNOWN_HOSTS"
-
   if ssh-keygen -F github.com -f "$KNOWN_HOSTS" >/dev/null 2>&1; then
-    grep -Fq "$GITHUB_KNOWN_HOSTS_ENTRY" "$KNOWN_HOSTS" || \
-      fail "$KNOWN_HOSTS already has a github.com entry that does not match the expected published GitHub key. Resolve this manually before rerunning."
+    grep -Fqx "$GITHUB_KNOWN_HOSTS_ENTRY" "$KNOWN_HOSTS" || fail "$KNOWN_HOSTS already has a github.com entry that does not match the expected published GitHub key. Resolve this manually before rerunning."
     return
   fi
-
   printf '%s\n' "$GITHUB_KNOWN_HOSTS_ENTRY" >> "$KNOWN_HOSTS"
   ssh-keygen -F github.com -f "$KNOWN_HOSTS" >/dev/null 2>&1 || fail 'Could not establish deterministic trust for the GitHub SSH host key.'
 }
@@ -92,6 +79,8 @@ ensure_alias() {
     grep -Fqx 'hostname github.com' <<<"$resolved" || fail "SSH alias $alias_name does not target github.com."
     grep -Fqx "identityfile $identity" <<<"$resolved" || fail "SSH alias $alias_name does not use $identity."
     grep -Fqx 'identitiesonly yes' <<<"$resolved" || fail "SSH alias $alias_name does not set IdentitiesOnly yes."
+    grep -Fqx "userknownhostsfile $KNOWN_HOSTS" <<<"$resolved" || fail "SSH alias $alias_name does not use the deterministic GitHub known_hosts file."
+    grep -Fqx 'stricthostkeychecking yes' <<<"$resolved" || fail "SSH alias $alias_name does not enforce StrictHostKeyChecking yes."
     return
   fi
   cat >> "$config" <<EOF
@@ -149,13 +138,10 @@ remote=$(git -C "$CONFIG_DIR" remote get-url origin 2>/dev/null || true)
 [[ $remote == "git@github-homepage-config:$CONFIG_REPO.git" ]] || fail 'Resulting config checkout has an unexpected origin.'
 [[ -f $CONFIG_DIR/deployment/bootstrap.sh ]] || fail "Private Stage 1 bootstrap was not found at $BOOTSTRAP."
 
-step 'Step 5: restore private recovery material' 'Restore the complete required private recovery material from secure external backup.'
-printf 'Private Stage 1 will validate the specific files, ownership, permissions, and identities it requires.\n'
-printf 'Press ENTER after the private recovery material has been restored... '
+step 'Step 5: restore private configuration' 'Restore the required sensitive configuration from secure external backup. Detailed requirements remain in private Stage 1 documentation.'
+printf 'Press ENTER after the required private recovery material has been restored... '
 IFS= read -r _ || true
-[[ -e $PRIVATE_RECOVERY_DIR ]] || fail "The expected private recovery directory does not exist. Restore it from secure backup, then rerun."
-[[ ! -L $PRIVATE_RECOVERY_DIR ]] || fail "The expected private recovery directory is a symlink, which is not safe to use. Resolve this manually."
-[[ -d $PRIVATE_RECOVERY_DIR ]] || fail "The expected private recovery path exists but is not a directory. Resolve this manually."
+[[ -d $SECRETS_DIR && ! -L $SECRETS_DIR ]] || fail "$SECRETS_DIR is missing or unsafe."
 
 step 'Step 6: invoke private Stage 1' 'Starting private Stage 1 deployment.'
 [[ -x $BOOTSTRAP ]] || fail "$BOOTSTRAP is not executable."
