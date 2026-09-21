@@ -9,7 +9,7 @@ readonly CONFIG_DIR="$HOMEPAGE_ROOT/config"
 readonly SECRETS_DIR='/opt/secrets'
 readonly SSH_DIR='/root/.ssh'
 readonly BOOTSTRAP="$CONFIG_DIR/deployment/bootstrap.sh"
-readonly KNOWN_HOSTS="$SSH_DIR/known_hosts"
+readonly RECOVERY_KNOWN_HOSTS="$SSH_DIR/known_hosts.infrastructure-recovery"
 readonly GITHUB_KNOWN_HOSTS_ENTRY='github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl'
 
 fail() { printf 'ERROR: %s\n' "$1" >&2; exit 1; }
@@ -33,15 +33,21 @@ step 'Step 2: prepare access credentials' 'Preparing secure access credentials.'
 mkdir -p "$SSH_DIR"; chown root:root "$SSH_DIR"; chmod 700 "$SSH_DIR"
 
 ensure_github_known_host() {
-  [[ ! -e $KNOWN_HOSTS || -f $KNOWN_HOSTS ]] || fail "$KNOWN_HOSTS is not a regular file; refusing to modify it."
-  [[ ! -L $KNOWN_HOSTS ]] || fail "$KNOWN_HOSTS is a symlink; refusing to modify it."
-  touch "$KNOWN_HOSTS"; chown root:root "$KNOWN_HOSTS"; chmod 600 "$KNOWN_HOSTS"
-  if ssh-keygen -F github.com -f "$KNOWN_HOSTS" >/dev/null 2>&1; then
-    grep -Fqx "$GITHUB_KNOWN_HOSTS_ENTRY" "$KNOWN_HOSTS" || fail "$KNOWN_HOSTS already has a github.com entry that does not match the expected published GitHub key. Resolve this manually before rerunning."
-    return
+  local line_count
+  [[ ! -e $RECOVERY_KNOWN_HOSTS || -f $RECOVERY_KNOWN_HOSTS ]] || fail "$RECOVERY_KNOWN_HOSTS is not a regular file; refusing to modify it."
+  [[ ! -L $RECOVERY_KNOWN_HOSTS ]] || fail "$RECOVERY_KNOWN_HOSTS is a symlink; refusing to modify it."
+
+  if [[ -e $RECOVERY_KNOWN_HOSTS ]]; then
+    line_count=$(wc -l < "$RECOVERY_KNOWN_HOSTS")
+    [[ $line_count -eq 1 ]] || fail "$RECOVERY_KNOWN_HOSTS must contain exactly the pinned GitHub host-key entry. Resolve it manually before rerunning."
+    grep -Fqx "$GITHUB_KNOWN_HOSTS_ENTRY" "$RECOVERY_KNOWN_HOSTS" || fail "$RECOVERY_KNOWN_HOSTS does not contain exactly the expected published GitHub key. Resolve it manually before rerunning."
+  else
+    (umask 077 && printf '%s\n' "$GITHUB_KNOWN_HOSTS_ENTRY" > "$RECOVERY_KNOWN_HOSTS") || fail "Could not create $RECOVERY_KNOWN_HOSTS."
   fi
-  printf '%s\n' "$GITHUB_KNOWN_HOSTS_ENTRY" >> "$KNOWN_HOSTS"
-  ssh-keygen -F github.com -f "$KNOWN_HOSTS" >/dev/null 2>&1 || fail 'Could not establish deterministic trust for the GitHub SSH host key.'
+
+  chown root:root "$RECOVERY_KNOWN_HOSTS"
+  chmod 600 "$RECOVERY_KNOWN_HOSTS"
+  [[ $(stat -c '%U:%G %a' "$RECOVERY_KNOWN_HOSTS") == 'root:root 600' ]] || fail "Could not establish safe ownership and permissions for $RECOVERY_KNOWN_HOSTS."
 }
 
 ensure_github_known_host
@@ -79,7 +85,7 @@ ensure_alias() {
     grep -Fqx 'hostname github.com' <<<"$resolved" || fail "SSH alias $alias_name does not target github.com."
     grep -Fqx "identityfile $identity" <<<"$resolved" || fail "SSH alias $alias_name does not use $identity."
     grep -Fqx 'identitiesonly yes' <<<"$resolved" || fail "SSH alias $alias_name does not set IdentitiesOnly yes."
-    grep -Fqx "userknownhostsfile $KNOWN_HOSTS" <<<"$resolved" || fail "SSH alias $alias_name does not use the deterministic GitHub known_hosts file."
+    grep -Fqx "userknownhostsfile $RECOVERY_KNOWN_HOSTS" <<<"$resolved" || fail "SSH alias $alias_name does not use the dedicated recovery known_hosts file."
     grep -Fqx 'stricthostkeychecking yes' <<<"$resolved" || fail "SSH alias $alias_name does not enforce StrictHostKeyChecking yes."
     return
   fi
@@ -90,7 +96,7 @@ Host $alias_name
   HostName github.com
   IdentityFile $identity
   IdentitiesOnly yes
-  UserKnownHostsFile $KNOWN_HOSTS
+  UserKnownHostsFile $RECOVERY_KNOWN_HOSTS
   StrictHostKeyChecking yes
 EOF
 }
