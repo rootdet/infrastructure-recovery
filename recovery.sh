@@ -48,14 +48,39 @@ parse_metadata() {
   [[ -n $METADATA_NAME && -n $METADATA_ORDER ]]
 }
 
+# A valid environment directory is any immediate child directory containing a
+# valid recovery.conf. A valid target directory is any immediate grandchild
+# directory containing both a valid recovery.conf and a recover.sh. Neither
+# check knows about any specific environment or target name; the dispatcher
+# stays generic and new modules never require dispatcher changes.
+has_valid_environment() {
+  local directory=$1
+  [[ -d $directory ]] || return 1
+  parse_metadata "$directory/recovery.conf"
+}
+
+has_valid_target() {
+  local directory=$1
+  [[ -d $directory && -f $directory/recover.sh ]] || return 1
+  parse_metadata "$directory/recovery.conf"
+}
+
+# A valid module tree is the root dispatcher plus at least one discoverable
+# environment that itself contains at least one discoverable target. This
+# intentionally does not reference any specific environment or target name.
 has_module_tree() {
-  local root=$1
+  local root=$1 environment target
   [[ -f $root/recovery.sh ]] || return 1
-  [[ -f $root/proxmox-home/recovery.conf ]] || return 1
-  [[ -f $root/proxmox-home/homepage/recovery.conf ]] || return 1
-  [[ -f $root/proxmox-home/homepage/recover.sh ]] || return 1
-  parse_metadata "$root/proxmox-home/recovery.conf" || return 1
-  parse_metadata "$root/proxmox-home/homepage/recovery.conf"
+  while IFS= read -r -d '' environment; do
+    if has_valid_environment "$environment"; then
+      while IFS= read -r -d '' target; do
+        if has_valid_target "$target"; then
+          return 0
+        fi
+      done < <(find "$environment" -mindepth 1 -maxdepth 1 -type d -print0 2>/dev/null)
+    fi
+  done < <(find "$root" -mindepth 1 -maxdepth 1 -type d -print0 2>/dev/null)
+  return 1
 }
 
 bootstrap_standalone() {
@@ -113,7 +138,7 @@ discover_environments() {
   DISCOVERY_LINES=()
   local directory
   while IFS= read -r -d '' directory; do
-    if parse_metadata "$directory/recovery.conf"; then
+    if has_valid_environment "$directory"; then
       DISCOVERY_LINES+=("$METADATA_ORDER"$'\t'"$METADATA_NAME"$'\t'"$directory")
     fi
   done < <(find "$SCRIPT_DIR" -mindepth 1 -maxdepth 1 -type d -print0 | LC_ALL=C sort -z)
@@ -123,7 +148,7 @@ discover_targets() {
   DISCOVERY_LINES=()
   local environment=$1 directory
   while IFS= read -r -d '' directory; do
-    if [[ -f $directory/recover.sh ]] && parse_metadata "$directory/recovery.conf"; then
+    if has_valid_target "$directory"; then
       DISCOVERY_LINES+=("$METADATA_ORDER"$'\t'"$METADATA_NAME"$'\t'"$directory")
     fi
   done < <(find "$environment" -mindepth 1 -maxdepth 1 -type d -print0 | LC_ALL=C sort -z)
