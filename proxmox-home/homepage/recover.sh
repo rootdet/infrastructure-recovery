@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Public Stage 0 workflow; private deployment logic remains in Stage 1.
+# Stage 0 workflow; private deployment logic remains in Stage 1.
 set -Eeuo pipefail
 
 readonly CONFIG_REPO='rootdet/homepage-dashboard'
@@ -26,7 +26,7 @@ if ((${#missing_tools[@]})); then
   apt-get install -y git openssh-client ca-certificates
 fi
 
-step 'Step 2: prepare SSH storage' "Ensuring $SSH_DIR exists with root-only directory permissions."
+step 'Step 2: prepare access credentials' 'Preparing secure access credentials.'
 [[ ! -e $SSH_DIR || -d $SSH_DIR ]] || fail "$SSH_DIR is not a directory. Nothing was changed."
 mkdir -p "$SSH_DIR"; chown root:root "$SSH_DIR"; chmod 700 "$SSH_DIR"
 
@@ -45,7 +45,7 @@ ensure_key() {
     return
   fi
   [[ ! -e $public && ! -L $public ]] || fail "$public exists without its private key; it will not be overwritten."
-  printf 'Generating ED25519 deploy key %s.\n' "$private"
+  printf 'Generating an ED25519 deploy key.\n'
   ssh-keygen -q -t ed25519 -N '' -C "$comment" -f "$private"
   chmod 600 "$private"; chmod 644 "$public"
 }
@@ -95,7 +95,7 @@ verify_repository_access() {
 verify_repository_access github-homepage-config "$CONFIG_REPO" "$SSH_DIR/github-homepage-config.pub"
 verify_repository_access github-homepage-integrations "$INTEGRATIONS_REPO" "$SSH_DIR/github-homepage-integrations.pub"
 
-step 'Step 4: prepare private Homepage configuration' "Only the expected private repository may become $CONFIG_DIR."
+step 'Step 4: prepare private configuration' 'Preparing the expected private configuration.'
 if [[ -e $CONFIG_DIR || -L $CONFIG_DIR ]]; then
   if [[ -d $CONFIG_DIR && ! -L $CONFIG_DIR ]] && git -C "$CONFIG_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
     remote=$(git -C "$CONFIG_DIR" remote get-url origin 2>/dev/null || true)
@@ -118,8 +118,7 @@ remote=$(git -C "$CONFIG_DIR" remote get-url origin 2>/dev/null || true)
 [[ $remote == "git@github-homepage-config:$CONFIG_REPO.git" ]] || fail 'Resulting config checkout has an unexpected origin.'
 [[ -f $CONFIG_DIR/deployment/bootstrap.sh ]] || fail "Private Stage 1 bootstrap was not found at $BOOTSTRAP."
 
-step 'Step 5: restore private secrets' 'Restore these files from secure external backup. They must never come from this public repository.'
-printf 'Required files: /opt/secrets/homepage.env and /opt/secrets/python_http.env\n'
+step 'Step 5: restore private configuration' 'Restore the required sensitive configuration from secure external backup. Detailed requirements remain in private Stage 1 documentation.'
 printf 'Press ENTER after both files have been restored... '
 IFS= read -r _ || true
 [[ -d $SECRETS_DIR && ! -L $SECRETS_DIR ]] || fail "$SECRETS_DIR is missing or unsafe."
@@ -130,7 +129,7 @@ chmod 700 "$SECRETS_DIR"; chmod 600 "$SECRETS_DIR/homepage.env" "$SECRETS_DIR/py
 [[ $(stat -c '%U:%G %a' "$SECRETS_DIR/homepage.env") == 'root:root 600' ]] || fail 'Could not verify homepage.env permissions.'
 [[ $(stat -c '%U:%G %a' "$SECRETS_DIR/python_http.env") == 'root:root 600' ]] || fail 'Could not verify python_http.env permissions.'
 
-step 'Step 6: invoke private Stage 1' "Running $BOOTSTRAP; Stage 1 owns the remaining deployment and validation logic."
+step 'Step 6: invoke private Stage 1' 'Starting private Stage 1 deployment.'
 [[ -x $BOOTSTRAP ]] || fail "$BOOTSTRAP is not executable."
 if "$BOOTSTRAP"; then
   printf '\nStage 1 completed successfully.\n'
