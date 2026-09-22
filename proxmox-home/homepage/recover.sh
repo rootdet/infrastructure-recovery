@@ -86,7 +86,7 @@ ensure_alias() {
     grep -Fqx "identityfile $identity" <<<"$resolved" || fail "SSH alias $alias_name does not use $identity."
     grep -Fqx 'identitiesonly yes' <<<"$resolved" || fail "SSH alias $alias_name does not set IdentitiesOnly yes."
     grep -Fqx "userknownhostsfile $RECOVERY_KNOWN_HOSTS" <<<"$resolved" || fail "SSH alias $alias_name does not use the dedicated recovery known_hosts file."
-    grep -Fqx 'stricthostkeychecking yes' <<<"$resolved" || fail "SSH alias $alias_name does not enforce StrictHostKeyChecking yes."
+    grep -Fqx 'stricthostkeychecking true' <<<"$resolved" || fail "SSH alias $alias_name does not enforce StrictHostKeyChecking yes."
     return
   fi
   cat >> "$config" <<EOF
