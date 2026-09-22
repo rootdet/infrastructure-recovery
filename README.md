@@ -16,7 +16,7 @@ chmod 700 recovery.sh
 sudo ./recovery.sh
 ```
 
-The launcher can run as a standalone file or from a complete checkout. It retrieves and validates the public Stage 0 module tree when necessary, then presents menus for the available recovery environments and targets.
+The launcher can run as a standalone file or from a complete checkout. It retrieves and validates the public Stage 0 module tree when necessary, then presents menus for the available recovery environments and targets. The current Home Proxmox environment provides Homepage and SMTP targets; detailed environment-specific requirements remain in their private Stage 1 repositories.
 
 ## Recovery model
 
@@ -36,8 +36,8 @@ For development or acceptance testing, `INFRASTRUCTURE_RECOVERY_REF` may be set 
 Run:
 
 ```bash
-bash -n recovery.sh proxmox-home/homepage/recover.sh
-shellcheck recovery.sh proxmox-home/homepage/recover.sh
+bash -n recovery.sh proxmox-home/homepage/recover.sh proxmox-home/smtp/recover.sh
+shellcheck recovery.sh proxmox-home/homepage/recover.sh proxmox-home/smtp/recover.sh
 git diff --check
 ```
 
