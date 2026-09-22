@@ -29,6 +29,12 @@ Stage 0 is intentionally self-contained and performs the required recovery orche
 
 Sensitive configuration must be restored from secure backup. Detailed recovery instructions remain in the applicable private Stage 1 repositories.
 
+## Homepage acceptance test
+
+A pristine Debian 13 Community Scripts Homepage disaster-recovery acceptance test completed successfully from `main`. It covered fresh deploy-key creation, private repository recovery, Stage 1 execution, Plex PMS token-cache refresh, and final validation: **17 passed, 0 failed, 0 warnings**.
+
+One SSH-over-port-22 clone temporarily stalled during Stage 0 and initially received no repository objects; it later recovered and completed without intervention. A separate SSH-over-port-443 clone completed immediately, while subsequent SSH-over-port-22 repository operations also completed normally. This was observed as a transient, non-reproducible anomaly and required no recovery-logic change.
+
 ## Development and validation
 
 For development or acceptance testing, `INFRASTRUCTURE_RECOVERY_REF` may be set to `main` or an exact 40-character commit SHA. Invalid values are rejected.
