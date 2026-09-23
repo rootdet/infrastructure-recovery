@@ -13,6 +13,24 @@ readonly GITHUB_KNOWN_HOSTS_ENTRY='github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AA
 fail() { printf 'ERROR: %s\n' "$1" >&2; exit 1; }
 step() { printf '\n==> %s\n%s\n' "$1" "$2"; }
 
+smtp_repository_origin_ok() {
+  case $1 in
+    'git@github-smtp-data:rootdet/smtp-data' \
+    | 'git@github-smtp-data:rootdet/smtp-data.git' \
+    | 'git@github.com:rootdet/smtp-data' \
+    | 'git@github.com:rootdet/smtp-data.git' \
+    | 'https://github.com/rootdet/smtp-data' \
+    | 'https://github.com/rootdet/smtp-data.git' \
+    | 'ssh://git@github.com/rootdet/smtp-data' \
+    | 'ssh://git@github.com/rootdet/smtp-data.git')
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
 require_smtp_lxc() {
   local hostname_short hostname_fqdn os_id os_version
   [[ $EUID -eq 0 ]] || fail 'Run this recovery as root.'
@@ -131,7 +149,7 @@ step 'Step 3: prepare private recovery source' 'Preparing the expected private S
 if [[ -e $SMTP_ROOT || -L $SMTP_ROOT ]]; then
   if [[ -d $SMTP_ROOT && ! -L $SMTP_ROOT ]] && git -C "$SMTP_ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
     remote=$(git -C "$SMTP_ROOT" remote get-url origin 2>/dev/null || true)
-    [[ $remote == "git@github-smtp-data:$SMTP_REPO.git" ]] || fail "$SMTP_ROOT is a Git checkout with unexpected origin ($remote); nothing was changed."
+    smtp_repository_origin_ok "$remote" || fail "$SMTP_ROOT is a Git checkout with unexpected origin ($remote); nothing was changed."
     printf 'Reusing the correct checkout; local changes are preserved.\n'
   else
     backup="/data.stage0-backup-$(date +%Y%m%d-%H%M%S)"
@@ -149,7 +167,7 @@ fi
 
 [[ $(git -C "$SMTP_ROOT" rev-parse --show-toplevel 2>/dev/null) == "$SMTP_ROOT" ]] || fail "$SMTP_ROOT is not the expected Git working tree."
 remote=$(git -C "$SMTP_ROOT" remote get-url origin 2>/dev/null || true)
-[[ $remote == "git@github-smtp-data:$SMTP_REPO.git" ]] || fail 'Resulting SMTP checkout has an unexpected origin.'
+smtp_repository_origin_ok "$remote" || fail 'Resulting SMTP checkout has an unexpected origin.'
 [[ -x $BOOTSTRAP ]] || fail "Private Stage 1 bootstrap was not found or is not executable at $BOOTSTRAP."
 [[ -x $VALIDATE ]] || fail "Private Stage 1 validation was not found or is not executable at $VALIDATE."
 
